@@ -1,5 +1,7 @@
 # Percival
-Percival is a micro-programming language for performing ETL tasks
+Percival is a micro-programming language for performing ETL tasks.
+
+Percival script code allows you to manipulate data using pure Python or Pandas expressions within Percival macros.
 
 ## Running Percival (pcv) scripts
 
