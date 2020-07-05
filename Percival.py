@@ -21,7 +21,7 @@ def run_shell(cmd):
 
 # ensure required libraries
 
-run_shell('python -m pip install pandas xlsxwriter xlrd openpyxl')
+run_shell('python -m pip install requests pandas xlsxwriter xlrd openpyxl')
 
 import sys
 import os
