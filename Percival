@@ -21,11 +21,12 @@ def run_shell(cmd):
 
 # ensure required libraries
 
-run_shell('python -m pip install requests pandas xlsxwriter xlrd openpyxl')
+run_shell('python -m pip install requests numpy pandas xlsxwriter xlrd openpyxl')
 
 import sys
 import os
 import json
+import numpy as np
 import pandas as pd
 import requests as http
 import datetime
@@ -77,6 +78,12 @@ def sys_macro_delete_file(dataObject):
     except:
         pass
 
+def sys_macro_pcv_dataframe(dataObject):
+    datasource = dataObject[0];
+    columns = dataObject[1];
+    _var = dataObject[2];
+    globals()[_var] = pd.DataFrame(np.array(datasource), columns=columns);
+
 def sys_macro_http_request(dataObject):
     try:
         type = dataObject[0].lower();
@@ -122,7 +129,8 @@ SYSTEM_MACROS = {
     'READ_EXCEL' : sys_macro_read_excel_file,
     'WRITE_EXCEL' : sys_macro_write_excel_file,
     'DELETE_FILE' : sys_macro_delete_file,
-    'HTTP_REQUEST' : sys_macro_http_request
+    'HTTP_REQUEST' : sys_macro_http_request,
+    'PCV_DATAFRAME' : sys_macro_pcv_dataframe
 }
 
 # read input script
