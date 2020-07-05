@@ -11,6 +11,9 @@
   
   ~~ Display PGDATA
   ? PGDATA;
+  
+  ~~ output PGDATA to JSON file
+  pgdata.json ? PGDATA;
 }
 
 {
