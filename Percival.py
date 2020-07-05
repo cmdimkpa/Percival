@@ -82,8 +82,14 @@ def sys_macro_http_request(dataObject):
         type = dataObject[0].lower();
         if type == 'get':
             url = dataObject[1];
-            _var = dataObject[2];
-            resp = http.get(url);
+            try:
+                _headers = { key : value for (key, value) in dataObject[2] };
+            except:
+                _headers = {}
+            if "Content-Type" not in _headers:
+                _headers["Content-Type"] = "application/json";
+            _var = dataObject[3];
+            resp = http.get(url, headers=_headers);
         if type == 'post':
             url = dataObject[1];
             try:
