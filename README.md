@@ -1,12 +1,12 @@
 # Percival
 Percival is a micro-programming language for performing ETL tasks.
 
-Percival script code allows you to manipulate data using pure Python or Pandas expressions within Percival macros.
+Percival is written in Python. Percival script code allows you to manipulate data using pure Python or Pandas expressions within Percival macros.
 
 ## Running Percival (pcv) scripts
 
 ```shell
-$ python Percival.py script.pcv
+$ python Percival script.pcv
 ```
 ## Hello, World!
 
