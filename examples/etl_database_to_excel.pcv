@@ -1,0 +1,18 @@
+~~ This ETL script pulls data from a Postgres Database exposed via a REST API and outputs the information to Excel
+
+{
+  ~~ Macro 1 : retrieve data from Postgres DB and save as PGDATA
+  HTTP_REQUEST @ [
+    'GET',
+    'https://data-eng-test.herokuapp.com/relay-api/v1/relay-out?Symbol=ETH',
+    [('Authorization', '0a8d149c073adc16cb1c7685c289ef26897986fccc96b5774b15b0103729cb86')],
+    'PGDATA'
+  ];
+  
+  ~~ Display PGDATA
+  ? PGDATA;
+}
+
+{
+  ~~ Macro 2 : 
+}
