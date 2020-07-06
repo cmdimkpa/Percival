@@ -165,19 +165,43 @@ if len(args) > 1:
     h = open(script, 'rb')
     lines = map(lambda x:x.decode(), h.readlines())
     h.close()
+    # to blob
+    blob = "::".join(lines);
+    # backtick preserve formatting
+    backticks = {}; backtick_id = -1; backtick_state = -1; _a = None; _b = None;
+    j = -1
+    for token in blob:
+        j += 1
+        if token == '`':
+            backtick_state+=1
+            if backtick_state == 0:
+                _a = j;
+            else:
+                _b = j;
+                backtick_state = -1;
+                backtick_id+=1
+                preformatted = blob[_a+1 : _b];
+                preformatted_id = "PREFORMATTED%s" % backtick_id;
+                backticks[preformatted_id] = preformatted;
+    # mask preformatted text
+    for preformatted_id in backticks:
+        blob = blob.replace('`%s`' % backticks[preformatted_id], preformatted_id);
+    # linearize
+    lines = blob.split('::');
     # remove comments
     lines_nc = [line for line in lines if "~~" not in line]
-    # join lines
-    lines = "".join(lines_nc);
+    # to blob
+    blob = "".join(lines_nc);
     # remove unwanted tokens
-    lines = lines.replace(' ','');
-    lines = lines.replace('\r','');
-    lines = lines.replace('\n','');
-    # force preserve space
-    lines = lines.replace('%20', ' ');
+    blob = blob.replace(' ','');
+    blob = blob.replace('\r','');
+    blob = blob.replace('\n','');
+    # unmask preformatted text
+    for preformatted_id in backticks:
+        blob = blob.replace(preformatted_id, backticks[preformatted_id]);
     # read macros
     l=[]; r=[]; j=-1
-    for token in lines:
+    for token in blob:
         j+=1
         if token == '{':
             l.append(j)
@@ -190,7 +214,7 @@ if len(args) > 1:
     # Execute Macros
     for _i in range(len(l)):
         _l = l[_i]; _r = r[_i];
-        macro = lines[_l+1 : _r];
+        macro = blob[_l+1 : _r];
         # get operations in this macro
         ops = [x for x in macro.split(';') if x]
         # run operations
