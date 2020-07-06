@@ -30,6 +30,8 @@ import numpy as np
 import pandas as pd
 import requests as http
 import datetime
+from os import listdir
+from os.path import isfile
 
 HOME = os.getcwd()
 if "\\" in HOME:
@@ -105,6 +107,22 @@ def sys_macro_pcv_dataframe(dataObject):
     _var = dataObject[2];
     globals()[_var] = pd.DataFrame(np.array(datasource), columns=columns);
 
+def sys_macro_file_list(dataObject):
+    dir = dataObject[0];
+    _var = dataObject[1];
+    filelist = None;
+    if dir in ['', '.']:
+        dir = HOME
+    if slash not in dir:
+        dir = HOME + dir
+    if dir[-1] != slash:
+        dir += slash
+    try:
+        filelist = [dir+x for x in listdir(dir) if isfile(dir+x)]
+    except:
+        pass
+    globals()[_var] = filelist;
+
 def sys_macro_http_request(dataObject):
     try:
         type = dataObject[0].lower();
@@ -153,7 +171,8 @@ SYSTEM_MACROS = {
     'READ_EXCEL' : sys_macro_read_excel_file,
     'WRITE_EXCEL' : sys_macro_write_excel_file,
     'HTTP_REQUEST' : sys_macro_http_request,
-    'PCV_DATAFRAME' : sys_macro_pcv_dataframe
+    'PCV_DATAFRAME' : sys_macro_pcv_dataframe,
+    'FILE_LIST' : sys_macro_file_list
 }
 
 # read input script
