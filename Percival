@@ -3,7 +3,7 @@ PercivalVersion =  0.5
 # Monty Dimkpa
 
 # -----------------------------------------------------------------
-# Percival is a micro-programming language for performing ETL tasks
+# Percival is a macro programming language for performing ETL tasks
 # -----------------------------------------------------------------
 
 import subprocess
@@ -69,6 +69,27 @@ def sys_macro_read_excel_file(dataObject):
         filename = HOME+filename;
     globals()[_var] = pd.read_excel(r'%s' % filename, sheet_name=sheetname, index_col=0);
 
+def sys_macro_read_file(dataObject):
+    filename = dataObject[0];
+    _bytes_limit = dataObject[1]; # -1 default (return all lines)
+    _var = dataObject[2];
+    if slash not in filename:
+        filename = HOME+filename;
+    h = open(filename, 'rb')
+    lines = [x.decode() for x in h.readlines(_bytes_limit)];
+    h.close()
+    globals()[_var] = lines;
+
+def sys_macro_write_file(dataObject):
+    filename = dataObject[0];
+    datasource = dataObject[1];
+    mode = dataObject[2].lower();
+    if slash not in filename:
+        filename = HOME+filename;
+    h = open(filename, '%sb' % mode)
+    h.write(b"%s" % datasource);
+    h.close()
+
 def sys_macro_delete_file(dataObject):
     filename = dataObject[0];
     if slash not in filename:
@@ -126,9 +147,11 @@ def sys_macro_http_request(dataObject):
         print('[Percival %s console @ %s] => HTTPUserError: %s' % (PercivalVersion, logtime(), str(err)))
 
 SYSTEM_MACROS = {
+    'READ_FILE' : sys_macro_read_file,
+    'WRITE_FILE' : sys_macro_write_file,
+    'DELETE_FILE' : sys_macro_delete_file,
     'READ_EXCEL' : sys_macro_read_excel_file,
     'WRITE_EXCEL' : sys_macro_write_excel_file,
-    'DELETE_FILE' : sys_macro_delete_file,
     'HTTP_REQUEST' : sys_macro_http_request,
     'PCV_DATAFRAME' : sys_macro_pcv_dataframe
 }
@@ -146,7 +169,7 @@ if len(args) > 1:
     lines_nc = [line for line in lines if "~~" not in line]
     # join lines
     lines = "".join(lines_nc);
-    # remove useless tokens
+    # remove unwanted tokens
     lines = lines.replace(' ','');
     lines = lines.replace('\r','');
     lines = lines.replace('\n','');
@@ -184,11 +207,11 @@ if len(args) > 1:
             else:
                 # do operation
                 if op_code == '<':
-                    # evaluate arithmetic expression
+                    # evaluate expression, store in variable
                     _var, _expr = op.split(op_code);
                     globals()[_var] = eval(_expr);
                 if op_code == '?':
-                    # echo
+                    # evaluate expression, echo
                     _out, _var = op.split(op_code);
                     if len(_out) == 0:
                         # console log
@@ -209,7 +232,10 @@ if len(args) > 1:
                         print('[Percival %s console @ %s] => SysMacroError: invalid system macro [%s] specified, skipping' % (PercivalVersion, logtime(), _sysMacro))
                     else:
                         # execute system macro
-                        SYSTEM_MACROS[_sysMacro](_dataObject);
+                        try:
+                            SYSTEM_MACROS[_sysMacro](_dataObject);
+                        except Exception as err:
+                            print('[Percival %s console @ %s] => SysMacroError: %s' % (PercivalVersion, logtime(), str(err)))
 else:
     # no input script provided
     print('[Percival %s console @ %s] => ScriptError: no input script provided' % (PercivalVersion, logtime()))
