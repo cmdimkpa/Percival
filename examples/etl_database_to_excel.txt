@@ -1,0 +1,40 @@
+~~ This ETL script pulls data from a Postgres Database exposed via a REST API and outputs the information to Excel
+
+{
+  ~~ Macro 1 : retrieve data from Postgres DB and save as PGDATA
+  HTTP_REQUEST @ [
+    'GET',
+    'https://data-eng-test.herokuapp.com/relay-api/v1/relay-out?Symbol=ETH',
+    [('Authorization', '0a8d149c073adc16cb1c7685c289ef26897986fccc96b5774b15b0103729cb86')],
+    'PGDATA'
+  ];
+}
+
+{
+  ~~ Macro 2: validation/pre-processing
+
+    ~~ Display PGDATA records
+    ? PGDATA["data"]["records"];
+
+    ~~ output PGDATA to JSON file
+    pgdata.json ? PGDATA;
+
+    ~~ write PGDATA records to variable
+    pgdata_records < PGDATA["data"]["records"];
+}
+
+
+{
+  ~~ Macro 3: write DataFrame to Excel
+
+    ~~ return PCV dataframe from pgdata_records
+    PCV_DATAFRAME @ [
+      pgdata_records,
+      ['row_id', 'symbol_id', 'timestamp', 'activity', 'price', 'volume'],
+      'pgdata_records_df'
+    ];
+
+    ~~ write dataframe to Excel file
+    WRITE_EXCEL @ ['pgdata_dump.xlsx', 'w', [(pgdata_records_df, 'PGDATA_RECORDS_DUMP')]];
+
+}
