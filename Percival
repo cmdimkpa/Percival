@@ -136,7 +136,7 @@ def sys_macro_http_request(dataObject):
                 _headers["Content-Type"] = "application/json";
             _var = dataObject[3];
             resp = http.get(url, headers=_headers);
-        if type == 'post':
+        if type in ['post', 'put', 'delete', 'patch']:
             url = dataObject[1];
             try:
                 payload = { key : value for (key, value) in dataObject[2] };
@@ -149,7 +149,7 @@ def sys_macro_http_request(dataObject):
             if "Content-Type" not in _headers:
                 _headers["Content-Type"] = "application/json";
             _var = dataObject[4];
-            resp = http.post(url, json.dumps(payload), headers=_headers);
+            resp = eval('http.%s(url, json.dumps(payload), headers=_headers)' % type);
         if str(resp.status_code)[0] != '2':
             # non-2XX response
             print('[Percival %s console @ %s] => HTTPError: [%s] %s' % (PercivalVersion, logtime(), resp.status_code, resp.content))
