@@ -1,0 +1,4 @@
+~~ Functional Programming in Percival
+
+~~ Percival allows you to implement functions in your macros using Python's lambda syntax.
+~~ Each operation in your function is defined separately and you can combine existing operations to create a new operation
