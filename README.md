@@ -7,7 +7,7 @@ Percival is a **macro programming language** for performing ETL tasks.
 
 - Percival simplifies ETL tasks by allowing you to write a complex ETL procedure as a simple, straight-forward script consisting of a number of `macros` - where each macro describes a group of related `operations`. 
 
-- All the libraries you need for your ETL are loaded behind the scenes during runtime and you can invoke a particular functionality in the context of a `system macro` call. You can also run pure Python expressions using the `eval` interface, or invoke the `shell/terminal` to run a command.
+- All the libraries you need for your ETL are loaded behind the scenes during runtime and you can invoke a particular functionality in the context of a `system macro` call. You can also evaluate pure Python expressions using the `eval` interface, or invoke the `shell/terminal` to run a command.
 
 - As a language, Percival supports `procedural`, `declarative` and `functional` programming styles. Functional programming in Percival is achieved through the use of Python's `lambda` syntax. 
 
