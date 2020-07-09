@@ -1,7 +1,7 @@
 <img src='https://avariz-cdn.s3.us-east-2.amazonaws.com/percival-logo.png' width='200' />
 
 # Percival
-Percival is a macro programming language for performing ETL tasks.
+Percival is a **macro programming language** for performing ETL tasks.
 
 - Percival is written in Python. 
 
@@ -24,10 +24,10 @@ $ python Percival script.pcv
 }
 ```
 
-### Examples
+## Examples
 
 See some live ETL examples done with Percival in the `examples` folder.
 
-### Inquiries
+## Inquiries
 
 For questions and comments about Percival, contact: cmdimkpa@gmail.com
