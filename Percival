@@ -1,10 +1,13 @@
-# Percival Interpreter
-PercivalVersion =  0.5
-# Monty Dimkpa
+from __future__ import division
 
 # -----------------------------------------------------------------
 # Percival is a macro programming language for performing ETL tasks
 # -----------------------------------------------------------------
+
+# Percival Macro Interpreter
+PercivalVersion =  0.33;
+# Author: Monty Dimkpa
+# cmdimkpa@gmail.com
 
 import subprocess
 
@@ -21,7 +24,19 @@ def run_shell(cmd):
 
 # ensure required libraries
 
-run_shell('python -m pip install requests numpy pandas xlsxwriter xlrd openpyxl html5lib bs4')
+required_libraries = [
+    "requests",
+    "numpy",
+    "pandas",
+    "xlsxwriter",
+    "xlrd",
+    "openpyxl",
+    "html5lib",
+    "bs4",
+    "boto"
+]
+
+run_shell('python -m pip install %s' % " ".join(required_libraries));
 
 import sys
 import os
@@ -33,6 +48,9 @@ import datetime
 from os import listdir
 from os.path import isfile
 from bs4 import BeautifulSoup
+from math import log10
+import boto
+from boto.s3.key import Key
 
 HOME = os.getcwd()
 if "\\" in HOME:
@@ -45,8 +63,166 @@ def now() : return datetime.datetime.today()
 
 def logtime() : return str(now())
 
+def estimate_size(obj):
+    size = len(repr(obj));
+    order = int(log10(size));
+    if 0 < order <= 6:
+        # kilobytes
+        return '%s%s' % (round(size/1000, 2), 'KB')
+    if 6 < order <= 9:
+        # megabytes
+        return '%s%s' % (round(size/1000000, 2), 'MB')
+    if order > 9:
+        # gigabytes
+        return '%s%s' % (round(size/1000000000, 2), 'GB')
+
 args = sys.argv;
-OP_CODES = [ '@', '<', '?' ]
+OP_CODES = [ '@', '<', '?', '$' ]
+CONTROL_CODES = ['{', '}', ';', '~~', '___', ' ', '\r', '\n']
+
+def mask(expr):
+    for i in range(len(CONTROL_CODES)):
+        expr = expr.replace(CONTROL_CODES[i], '&%s' % i);
+    return expr;
+
+def unmask(expr):
+    for i in range(len(CONTROL_CODES)):
+        expr = expr.replace('&%s' % i, CONTROL_CODES[i]);
+    return expr;
+
+def PCV_EVAL(lines):
+    # to blob
+    blob = "::".join(lines);
+    # backtick preserve formatting
+    backticks = {}; backtick_id = -1; backtick_state = -1; _a = None; _b = None;
+    changesets = [];
+    j = -1
+    for token in blob:
+        j += 1
+        if token == '`':
+            backtick_state+=1
+            if backtick_state == 0:
+                _a = j;
+            else:
+                _b = j;
+                backtick_state = -1;
+                backtick_id+=1
+                preformatted = blob[_a+1 : _b];
+                preformatted_id = "PREFORMATTED%s" % backtick_id;
+                if '{' in preformatted or '}' in preformatted:
+                    changesets.append([ preformatted, None ]);
+                    # mask reserved tokens in preformatted text
+                    preformatted = mask(preformatted);
+                    changesets[-1][1] = preformatted;
+                backticks[preformatted_id] = preformatted;
+    for changeset in changesets:
+        blob = blob.replace(changeset[0], changeset[1]);
+    # mask preformatted text
+    for preformatted_id in backticks:
+        blob = blob.replace('`%s`' % backticks[preformatted_id], preformatted_id);
+    # linearize
+    lines = blob.split('::');
+    # remove comments
+    lines_nc = [line for line in lines if "~~" not in line]
+    # to blob
+    blob = "".join(lines_nc);
+    # remove unwanted tokens
+    blob = blob.replace(' ','');
+    blob = blob.replace('\r','');
+    blob = blob.replace('\n','');
+    # unmask preformatted text
+    for preformatted_id in backticks:
+        blob = blob.replace(preformatted_id, backticks[preformatted_id]);
+    blob = blob.replace('::', '');
+    # read macros
+    l=[]; r=[]; j=-1
+    for token in blob:
+        j+=1
+        if token == '{':
+            l.append(j)
+        if token == '}':
+            r.append(j)
+    if len(l) != len(r):
+        # parity error
+        print('[Percival v%s console @ %s] => ParityError: check macro boundaries' % (PercivalVersion, logtime()))
+        sys.exit()
+    # Execute Macros
+    for _i in range(len(l)):
+        _l = l[_i]; _r = r[_i];
+        macro = blob[_l+1 : _r];
+        # get operations in this macro
+        ops = [x for x in macro.split(';') if x]
+        # run operations
+        for op in ops:
+            # determine op_code
+            op_code = None;
+            for token in op:
+                if token in OP_CODES:
+                    op_code = token;
+                    break
+            if not op_code:
+                # no op_code detected, skip operation
+                print('[Percival v%s console @ %s] => OpCodeError: no op_code detected, skipping' % (PercivalVersion, logtime()))
+            else:
+                # do operation
+                if op_code == '<':
+                    # evaluate expression, store in variable
+                    comps = op.split(op_code);
+                    _var = comps[0];
+                    _expr = op_code.join(comps[1:]);
+                    # unmask reserved tokens in expression
+                    _expr = unmask(_expr);
+                    try:
+                        globals()[_var] = eval(_expr);
+                    except:
+                        globals()[_var] = _expr;
+                if op_code in ['?', '$']:
+                    # evaluate expression, echo
+                    comps = op.split(op_code);
+                    _out = comps[0];
+                    _expr = op_code.join(comps[1:]);
+                    # unmask reserved tokens in expression
+                    _expr = unmask(_expr);
+                    # get result
+                    if op_code == '?':
+                        try:
+                            result = eval(_expr);
+                        except:
+                            result = _expr
+                    if op_code == '$':
+                        result = run_shell(_expr);
+                    if len(_out) == 0:
+                        # console log
+                        print(result);
+                    else:
+                        # file log
+                        if slash not in _out:
+                            _out = HOME+_out;
+                        h = open(_out, 'wb')
+                        h.write(b"%s" % result)
+                        h.close()
+                if op_code == '@':
+                    # run system macro
+                    comps = op.split(op_code);
+                    _sysMacro = comps[0];
+                    _dataObject = op_code.join(comps[1:]);
+                    _dataObject = eval(_dataObject);
+                    if _sysMacro not in SYSTEM_MACROS:
+                        # invalid system macro specified
+                        print('[Percival v%s console @ %s] => SysMacroError: invalid system macro [%s] specified, skipping' % (PercivalVersion, logtime(), _sysMacro))
+                    else:
+                        # execute system macro
+                        try:
+                            SYSTEM_MACROS[_sysMacro](_dataObject);
+                        except Exception as err:
+                            print('[Percival v%s console @ %s] => SysMacroError: %s' % (PercivalVersion, logtime(), str(err)))
+
+def tunnel(datasource, script):
+    # tunnel a datasource into a script
+    script = unmask(script);
+    globals()['___'] = datasource;
+    lines = script.split('\r\n');
+    PCV_EVAL(lines);
 
 def sys_macro_write_excel_file(dataObject):
     filename = dataObject[0];
@@ -135,6 +311,115 @@ def sys_macro_html_soup(dataObject):
         pass
     globals()[_var] = soup;
 
+def sys_macro_write_s3(dataObject):
+    pass
+
+def sys_macro_connect_mssql(dataObject):
+    pass
+
+def sys_macro_query_mssql(dataObject):
+    pass
+
+def sys_macro_stream_mssql(dataObject):
+    pass
+
+def sys_macro_connect_oracle(dataObject):
+    pass
+
+def sys_macro_query_oracle(dataObject):
+    pass
+
+def sys_macro_stream_oracle(dataObject):
+    pass
+
+def sys_macro_connect_mysql(dataObject):
+    pass
+
+def sys_macro_query_mysql(dataObject):
+    pass
+
+def sys_macro_stream_mysql(dataObject):
+    pass
+
+def sys_macro_connect_postgresql(dataObject):
+    pass
+
+def sys_macro_query_postgresql(dataObject):
+    pass
+
+def sys_macro_stream_postgresql(dataObject):
+    pass
+
+def sys_macro_connect_mongodb(dataObject):
+    pass
+
+def sys_macro_query_mongodb(dataObject):
+    pass
+
+def sys_macro_stream_mongodb(dataObject):
+    pass
+
+def sys_macro_connect_redis(dataObject):
+    pass
+
+def sys_macro_query_redis(dataObject):
+    pass
+
+def sys_macro_read_pdf(dataObject):
+    pass
+
+def sys_macro_configure_mail(dataObject):
+    pass
+
+def sys_macro_send_mail(dataObject):
+    pass
+
+def sys_macro_read_json(dataObject):
+    try:
+        filename = dataObject[0];
+        if slash not in filename:
+            filename = HOME + filename;
+        h = open(filename, 'r')
+        data = h.read()
+        h.close()
+        _var = dataObject[1];
+        try:
+            globals()[_var] = json.loads(data);
+        except:
+            globals()[_var] = eval(data);
+    except:
+        pass
+
+def sys_macro_connect_s3(dataObject):
+    configVar = dataObject[0];
+    try:
+        config = globals()[configVar];
+        globals()['s3conn'] = boto.connect_s3(
+            aws_access_key_id = config['access_key'],
+            aws_secret_access_key = config['secret_key'],
+            host = 's3.%s.amazonaws.com' % config['region']
+        );
+    except Exception as err:
+        # handle user error
+        print('[Percival v%s console @ %s] => S3ConnectionError: %s' % (PercivalVersion, logtime(), str(err)))
+
+def sys_macro_read_s3(dataObject):
+    try:
+        s3conn = globals()['s3conn'];
+        myBucket = dataObject[0];
+        myKey = dataObject[1];
+        myScript = dataObject[2];
+        s3bucket = s3conn.get_bucket(myBucket);
+        s3key = Key(s3bucket);
+        s3key.key = myKey;
+        globals()['s3bucket'] = s3bucket;
+        globals()['s3key'] = s3key;
+        # tunnel file data into Percival script
+        tunnel(s3key.get_contents_as_string(), myScript);
+    except Exception as err:
+        # handle user error
+        print('[Percival v%s console @ %s] => S3ReadError: %s' % (PercivalVersion, logtime(), str(err)))
+
 def sys_macro_http_request(dataObject):
     try:
         type = dataObject[0].lower();
@@ -164,17 +449,17 @@ def sys_macro_http_request(dataObject):
             resp = eval('http.%s(url, json.dumps(payload), headers=_headers)' % type);
         if str(resp.status_code)[0] != '2':
             # non-2XX response
-            print('[Percival %s console @ %s] => HTTPError: [%s] %s' % (PercivalVersion, logtime(), resp.status_code, resp.content))
+            print('[Percival v%s console @ %s] => HTTPError: [%s] %s' % (PercivalVersion, logtime(), resp.status_code, resp.content))
         try:
             content = resp.json()
         except:
             content = resp.content
         globals()[_var] = content;
         # report
-        print('[Percival %s console @ %s] => HTTPSuccess: [%s] %s bytes stored in VAR : %s' % (PercivalVersion, logtime(), resp.status_code, sys.getsizeof(globals()[_var]), _var))
+        print('[Percival v%s console @ %s] => HTTPSuccess: [%s] %s bytes stored in VAR : %s' % (PercivalVersion, logtime(), resp.status_code, estimate_size(globals()[_var]), _var))
     except Exception as err:
         # handle user error
-        print('[Percival %s console @ %s] => HTTPUserError: %s' % (PercivalVersion, logtime(), str(err)))
+        print('[Percival v%s console @ %s] => HTTPUserError: %s' % (PercivalVersion, logtime(), str(err)))
 
 SYSTEM_MACROS = {
     'READ_FILE' : sys_macro_read_file,
@@ -185,7 +470,31 @@ SYSTEM_MACROS = {
     'HTTP_REQUEST' : sys_macro_http_request,
     'PCV_DATAFRAME' : sys_macro_pcv_dataframe,
     'FILE_LIST' : sys_macro_file_list,
-    'HTML_SOUP' : sys_macro_html_soup
+    'HTML_SOUP' : sys_macro_html_soup,
+    'CONNECT_S3' : sys_macro_connect_s3,
+    'READ_S3' : sys_macro_read_s3,
+    'WRITE_S3' : sys_macro_write_s3,
+    'CONNECT_MSSQL' : sys_macro_connect_mssql,
+    'QUERY_MSSQL' : sys_macro_query_mssql,
+    'STREAM_MSSQL' : sys_macro_stream_mssql,
+    'CONNECT_ORACLE' : sys_macro_connect_oracle,
+    'QUERY_ORACLE' : sys_macro_query_oracle,
+    'STREAM_ORACLE' : sys_macro_stream_oracle,
+    'CONNECT_MYSQL' : sys_macro_connect_mysql,
+    'QUERY_MYSQL' : sys_macro_query_mysql,
+    'STREAM_MYSQL' : sys_macro_stream_mysql,
+    'CONNECT_POSTGRESQL' : sys_macro_connect_postgresql,
+    'QUERY_POSTGRESQL' : sys_macro_query_postgresql,
+    'STREAM_POSTGRESQL' : sys_macro_stream_postgresql,
+    'CONNECT_MONGODB' : sys_macro_connect_mongodb,
+    'QUERY_MONGODB' : sys_macro_query_mongodb,
+    'STREAM_MONGODB' : sys_macro_stream_mongodb,
+    'CONNECT_REDIS' : sys_macro_connect_redis,
+    'QUERY_REDIS' : sys_macro_query_redis,
+    'READ_PDF' : sys_macro_read_pdf,
+    'CONFIGURE_MAIL' : sys_macro_configure_mail,
+    'SEND_MAIL' : sys_macro_send_mail,
+    'READ_JSON' : sys_macro_read_json
 }
 
 # read input script
@@ -197,124 +506,9 @@ if len(args) > 1:
     h = open(script, 'rb')
     lines = map(lambda x:x.decode(), h.readlines())
     h.close()
-    # to blob
-    blob = "::".join(lines);
-    # backtick preserve formatting
-    backticks = {}; backtick_id = -1; backtick_state = -1; _a = None; _b = None;
-    changesets = [];
-    j = -1
-    for token in blob:
-        j += 1
-        if token == '`':
-            backtick_state+=1
-            if backtick_state == 0:
-                _a = j;
-            else:
-                _b = j;
-                backtick_state = -1;
-                backtick_id+=1
-                preformatted = blob[_a+1 : _b];
-                preformatted_id = "PREFORMATTED%s" % backtick_id;
-                if '{' in preformatted or '}' in preformatted:
-                    changesets.append([ preformatted, None ]);
-                    # mask reserved tokens in preformatted text
-                    preformatted = preformatted.replace('{', '&0');
-                    preformatted = preformatted.replace('}', '&1');
-                    preformatted = preformatted.replace(';', '&2');
-                    preformatted = preformatted.replace('~~', '&3');
-                    changesets[-1][1] = preformatted;
-                backticks[preformatted_id] = preformatted;
-    for changeset in changesets:
-        blob = blob.replace(changeset[0], changeset[1]);
-    # mask preformatted text
-    for preformatted_id in backticks:
-        blob = blob.replace('`%s`' % backticks[preformatted_id], preformatted_id);
-    # linearize
-    lines = blob.split('::');
-    # remove comments
-    lines_nc = [line for line in lines if "~~" not in line]
-    # to blob
-    blob = "".join(lines_nc);
-    # remove unwanted tokens
-    blob = blob.replace(' ','');
-    blob = blob.replace('\r','');
-    blob = blob.replace('\n','');
-    # unmask preformatted text
-    for preformatted_id in backticks:
-        blob = blob.replace(preformatted_id, backticks[preformatted_id]);
-    # read macros
-    l=[]; r=[]; j=-1
-    for token in blob:
-        j+=1
-        if token == '{':
-            l.append(j)
-        if token == '}':
-            r.append(j)
-    if len(l) != len(r):
-        # parity error
-        print('[Percival %s console @ %s] => ParityError: check macro boundaries' % (PercivalVersion, logtime()))
-        sys.exit()
-    # Execute Macros
-    for _i in range(len(l)):
-        _l = l[_i]; _r = r[_i];
-        macro = blob[_l+1 : _r];
-        # get operations in this macro
-        ops = [x for x in macro.split(';') if x]
-        # run operations
-        for op in ops:
-            # determine op_code
-            op_code = None;
-            for token in op:
-                if token in OP_CODES:
-                    op_code = token;
-                    break
-            if not op_code:
-                # no op_code detected, skip operation
-                print('[Percival %s console @ %s] => OpCodeError: no op_code detected, skipping' % (PercivalVersion, logtime()))
-            else:
-                # do operation
-                if op_code == '<':
-                    # evaluate expression, store in variable
-                    _var, _expr = op.split(op_code);
-                    # unmask reserved tokens in expression
-                    _expr = _expr.replace('&0', '{');
-                    _expr = _expr.replace('&1', '}');
-                    _expr = _expr.replace('&2', ';');
-                    _expr = _expr.replace('&3', '~~');
-                    globals()[_var] = eval(_expr);
-                if op_code == '?':
-                    # evaluate expression, echo
-                    _out, _expr = op.split(op_code);
-                    # unmask reserved tokens in expression
-                    _expr = _expr.replace('&0', '{');
-                    _expr = _expr.replace('&1', '}');
-                    _expr = _expr.replace('&2', ';');
-                    _expr = _expr.replace('&3', '~~');
-                    if len(_out) == 0:
-                        # console log
-                        print(eval(_expr));
-                    else:
-                        # file log
-                        if slash not in _out:
-                            _out = HOME+_out;
-                        h = open(_out, 'wb')
-                        h.write(b"%s" % eval(_expr))
-                        h.close()
-                if op_code == '@':
-                    # run system macro
-                    _sysMacro, _dataObject = op.split(op_code);
-                    _dataObject = eval(_dataObject);
-                    if _sysMacro not in SYSTEM_MACROS:
-                        # invalid system macro specified
-                        print('[Percival %s console @ %s] => SysMacroError: invalid system macro [%s] specified, skipping' % (PercivalVersion, logtime(), _sysMacro))
-                    else:
-                        # execute system macro
-                        try:
-                            SYSTEM_MACROS[_sysMacro](_dataObject);
-                        except Exception as err:
-                            print('[Percival %s console @ %s] => SysMacroError: %s' % (PercivalVersion, logtime(), str(err)))
+    PCV_EVAL(lines);
 else:
     # no input script provided
-    print('[Percival %s console @ %s] => ScriptError: no input script provided' % (PercivalVersion, logtime()))
+    print('[Percival v%s console @ %s] => ScriptError: no input script provided' % (PercivalVersion, logtime()))
 
 sys.exit()
