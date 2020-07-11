@@ -2,3 +2,11 @@
 
 ~~ Percival allows you to implement functions in your macros using Python's lambda syntax.
 ~~ Each operation in your function is defined separately and you can combine existing operations to create a new operation
+
+{
+    squared < ` lambda x:x**2 `;
+    plus1 < `lambda y: y + 1`;
+    inter < ` lambda x : plus1(squared(x)) `;
+    myfunc < ` lambda x : inter(x) % 2 == 0 `;
+    ? myfunc(3);
+}
