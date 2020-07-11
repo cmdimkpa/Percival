@@ -20,7 +20,7 @@ $ python Percival script.pcv
 
 ```pcv
 {
-  ? Hello, World!;
+  ? `Hello, World!`;
 }
 ```
 
