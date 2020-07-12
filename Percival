@@ -64,15 +64,12 @@ def db_conn_str(engine, config):
         "pymssql" : ["pymssql.connect(user='%s', password='%s', server='%s', port=%s, database='%s')", 1433],
         "pymysql" : ["pymysql.connect(user='%s', password='%s', host='%s', port=%s, database='%s')", 3306],
         "pymongo" : ["MongoClient('mongodb://%s:%s@%s:%s/?authSource=%s')", 27017],
-        "redis" : ["redis.Redis(host='%s', port=%s, password='%s', db=%s)", 6379]
+        "redis" : ["redis.Redis(host='%s', port=%s, password='%s', db=0)", 6379]
     }
     try:
         dbname = config["database"]
     except:
-        if engine == 'redis':
-            dbname = 0
-        else:
-            dbname = None
+        dbname = None
     try:
         user = config["username"]
     except:
@@ -91,14 +88,14 @@ def db_conn_str(engine, config):
         port = defaults[engine][1]
     if engine in ['cx_Oracle', 'psycopg2', 'pymssql', 'pymysql']:
         controls = (user,password,host,port,dbname,)
-    elif engine == 'pymongo':
+    if engine == 'pymongo':
         try:
             authSource = config["database"]
         except:
             authSource = "admin"
         controls = (user,password,host,port,authSource,)
-    else:
-        controls = (host,port,password,dbname,)
+    if engine == 'redis':
+        controls = (host,port,password,)
     connector = defaults[engine][0]
     conn_str = connector % controls
     return conn_str
