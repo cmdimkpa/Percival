@@ -5,7 +5,7 @@ from __future__ import division
 # -----------------------------------------------------------------
 
 # Percival Macro Interpreter
-PercivalVersion =  0.33;
+PercivalVersion =  0.6;
 # Author: Monty Dimkpa
 # cmdimkpa@gmail.com
 
@@ -22,35 +22,13 @@ def run_shell(cmd):
       except:
           return out
 
-# ensure required libraries
-
-required_libraries = [
-    "requests",
-    "numpy",
-    "pandas",
-    "xlsxwriter",
-    "xlrd",
-    "openpyxl",
-    "html5lib",
-    "bs4",
-    "boto"
-]
-
-run_shell('python -m pip install %s' % " ".join(required_libraries));
-
 import sys
 import os
 import json
-import numpy as np
-import pandas as pd
-import requests as http
 import datetime
 from os import listdir
 from os.path import isfile
-from bs4 import BeautifulSoup
 from math import log10
-import boto
-from boto.s3.key import Key
 
 HOME = os.getcwd()
 if "\\" in HOME:
@@ -75,6 +53,55 @@ def estimate_size(obj):
     if order > 9:
         # gigabytes
         return '%s%s' % (round(size/1000000000, 2), 'GB')
+
+def install(required_libraries):
+    return [run_shell('python -m pip install %s' % lib) for lib in required_libraries]
+
+def db_conn_str(engine, config):
+    defaults = {
+        "psycopg2" : ["psycopg2.connect(user='%s', password='%s', host='%s', port=%s, dbname='%s')", 5432],
+        "cx_Oracle" : ["cx_Oracle.connect('%s', '%s', '%s:%s/%s', encoding='UTF-8')", 1521],
+        "pymssql" : ["pymssql.connect(user='%s', password='%s', server='%s', port=%s, database='%s')", 1433],
+        "pymysql" : ["pymysql.connect(user='%s', password='%s', host='%s', port=%s, database='%s')", 3306],
+        "pymongo" : ["MongoClient('mongodb://%s:%s@%s:%s/?authSource=%s')", 27017],
+        "redis" : ["redis.Redis(host='%s', port=%s, password='%s', db=%s)", 6379]
+    }
+    try:
+        dbname = config["database"]
+    except:
+        if engine == 'redis':
+            dbname = 0
+        else:
+            dbname = None
+    try:
+        user = config["username"]
+    except:
+        user = None
+    try:
+        password = config["password"]
+    except:
+        password = None
+    try:
+        host = config["host"]
+    except:
+        host = None
+    try:
+        port = config["port"]
+    except:
+        port = defaults[engine][1]
+    if engine in ['cx_Oracle', 'psycopg2', 'pymssql', 'pymysql']:
+        controls = (user,password,host,port,dbname,)
+    elif engine == 'pymongo':
+        try:
+            authSource = config["database"]
+        except:
+            authSource = "admin"
+        controls = (user,password,host,port,authSource,)
+    else:
+        controls = (host,port,password,dbname,)
+    connector = defaults[engine][0]
+    conn_str = connector % controls
+    return conn_str
 
 args = sys.argv;
 OP_CODES = [ '@', '<', '?', '$' ]
@@ -225,6 +252,15 @@ def tunnel(datasource, script):
     PCV_EVAL(lines);
 
 def sys_macro_write_excel_file(dataObject):
+    install([
+        "numpy",
+        "pandas",
+        "xlsxwriter",
+        "xlrd",
+        "openpyxl"
+    ]);
+    import numpy as np
+    import pandas as pd
     filename = dataObject[0];
     if slash not in filename:
         filename = HOME+filename;
@@ -241,6 +277,15 @@ def sys_macro_write_excel_file(dataObject):
     writer.save();
 
 def sys_macro_read_excel_file(dataObject):
+    install([
+        "numpy",
+        "pandas",
+        "xlsxwriter",
+        "xlrd",
+        "openpyxl"
+    ]);
+    import numpy as np
+    import pandas as pd
     filename = dataObject[0];
     sheetname = dataObject[1];
     _var = dataObject[2];
@@ -279,6 +324,15 @@ def sys_macro_delete_file(dataObject):
         pass
 
 def sys_macro_pcv_dataframe(dataObject):
+    install([
+        "numpy",
+        "pandas",
+        "xlsxwriter",
+        "xlrd",
+        "openpyxl"
+    ]);
+    import numpy as np
+    import pandas as pd
     datasource = dataObject[0];
     columns = dataObject[1];
     _var = dataObject[2];
@@ -301,6 +355,13 @@ def sys_macro_file_list(dataObject):
     globals()[_var] = filelist;
 
 def sys_macro_html_soup(dataObject):
+    install([
+        "requests",
+        "html5lib",
+        "bs4"
+    ]);
+    import requests as http
+    from bs4 import BeautifulSoup
     url = dataObject[0];
     _var = dataObject[1];
     soup = None
@@ -312,10 +373,42 @@ def sys_macro_html_soup(dataObject):
     globals()[_var] = soup;
 
 def sys_macro_write_s3(dataObject):
-    pass
+    install([
+        "boto"
+    ]);
+    import boto
+    from boto.s3.key import Key
+    try:
+        s3conn = globals()['s3conn'];
+        myBucket = dataObject[0];
+        myKey = dataObject[1];
+        datasource = dataObject[2];
+        myScript = dataObject[3];
+        s3bucket = s3conn.get_bucket(myBucket);
+        s3key = Key(s3bucket);
+        s3key.key = myKey;
+        globals()['s3bucket'] = s3bucket;
+        globals()['s3key'] = s3key;
+        globals()['s3lastUrl'] = "https://%s/%s/%s" % (s3conn.host, myBucket, myKey);
+        s3key.set_contents_from_string(str(datasource));
+        # tunnel url into Percival script
+        tunnel(globals()['s3lastUrl'], myScript);
+    except Exception as err:
+        # handle user error
+        print('[Percival v%s console @ %s] => S3ReadError: %s' % (PercivalVersion, logtime(), str(err)))
 
 def sys_macro_connect_mssql(dataObject):
-    pass
+    install([
+        "pymssql"
+    ]);
+    import pymssql
+    configVar = dataObject[0];
+    try:
+        config = globals()[configVar];
+        globals()['mssql_conn'] = eval(db_conn_str("pymssql", config));
+    except Exception as err:
+        # handle user error
+        print('[Percival v%s console @ %s] => MSSQLServerConnectionError: %s' % (PercivalVersion, logtime(), str(err)))
 
 def sys_macro_query_mssql(dataObject):
     pass
@@ -333,7 +426,17 @@ def sys_macro_stream_oracle(dataObject):
     pass
 
 def sys_macro_connect_mysql(dataObject):
-    pass
+    install([
+        "pymysql"
+    ]);
+    import pymysql
+    configVar = dataObject[0];
+    try:
+        config = globals()[configVar];
+        globals()['mysql_conn'] = eval(db_conn_str("pymysql", config));
+    except Exception as err:
+        # handle user error
+        print('[Percival v%s console @ %s] => MySQLConnectionError: %s' % (PercivalVersion, logtime(), str(err)))
 
 def sys_macro_query_mysql(dataObject):
     pass
@@ -342,7 +445,17 @@ def sys_macro_stream_mysql(dataObject):
     pass
 
 def sys_macro_connect_postgresql(dataObject):
-    pass
+    install([
+        "psycopg2"
+    ]);
+    import psycopg2
+    configVar = dataObject[0];
+    try:
+        config = globals()[configVar];
+        globals()['postgresql_conn'] = eval(db_conn_str("psycopg2", config));
+    except Exception as err:
+        # handle user error
+        print('[Percival v%s console @ %s] => PostgreSQLConnectionError: %s' % (PercivalVersion, logtime(), str(err)))
 
 def sys_macro_query_postgresql(dataObject):
     pass
@@ -351,7 +464,17 @@ def sys_macro_stream_postgresql(dataObject):
     pass
 
 def sys_macro_connect_mongodb(dataObject):
-    pass
+    install([
+        "pymongo"
+    ]);
+    from pymongo import MongoClient
+    configVar = dataObject[0];
+    try:
+        config = globals()[configVar];
+        globals()['mongodb_client'] = eval(db_conn_str("pymongo", config));
+    except Exception as err:
+        # handle user error
+        print('[Percival v%s console @ %s] => MongoDBConnectionError: %s' % (PercivalVersion, logtime(), str(err)))
 
 def sys_macro_query_mongodb(dataObject):
     pass
@@ -360,7 +483,17 @@ def sys_macro_stream_mongodb(dataObject):
     pass
 
 def sys_macro_connect_redis(dataObject):
-    pass
+    install([
+        "redis"
+    ]);
+    import redis
+    configVar = dataObject[0];
+    try:
+        config = globals()[configVar];
+        globals()['redis_client'] = eval(db_conn_str("redis", config));
+    except Exception as err:
+        # handle user error
+        print('[Percival v%s console @ %s] => RedisConnectionError: %s' % (PercivalVersion, logtime(), str(err)))
 
 def sys_macro_query_redis(dataObject):
     pass
@@ -391,6 +524,11 @@ def sys_macro_read_json(dataObject):
         pass
 
 def sys_macro_connect_s3(dataObject):
+    install([
+        "boto"
+    ]);
+    import boto
+    from boto.s3.key import Key
     configVar = dataObject[0];
     try:
         config = globals()[configVar];
@@ -404,6 +542,11 @@ def sys_macro_connect_s3(dataObject):
         print('[Percival v%s console @ %s] => S3ConnectionError: %s' % (PercivalVersion, logtime(), str(err)))
 
 def sys_macro_read_s3(dataObject):
+    install([
+        "boto"
+    ]);
+    import boto
+    from boto.s3.key import Key
     try:
         s3conn = globals()['s3conn'];
         myBucket = dataObject[0];
@@ -421,6 +564,10 @@ def sys_macro_read_s3(dataObject):
         print('[Percival v%s console @ %s] => S3ReadError: %s' % (PercivalVersion, logtime(), str(err)))
 
 def sys_macro_http_request(dataObject):
+    install([
+        "requests"
+    ]);
+    import requests as http
     try:
         type = dataObject[0].lower();
         if type == 'get':
