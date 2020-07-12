@@ -1,7 +1,7 @@
 from __future__ import division
 
 # -----------------------------------------------------------------
-# Percival is a macro programming language for performing ETL tasks
+# Percival is a macro programming language for ETL tasks
 # -----------------------------------------------------------------
 
 # Percival Macro Interpreter
